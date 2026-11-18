@@ -136,7 +136,7 @@ find recovered/ -type f
 
 | Thành viên | MSSV | Phụ trách |
 |---|---|---|
-| NGUYỄN ĐẶNG MINH DUY | 23127536 | Case 1 |
+| NGUYỄN ĐẶNG MINH DUY | 23127042 | Case 1 |
 | NGUYỄN ANH KIỆT | 23127005 | `info()` và Case 2 |
 | NGUYỄN LÊ THIÊN LÝ | [MSSV] | Case 3 |
-| NGUYỄN TẤN PHƯỚC  | 23127042 | Bonus C: `corrupt()`, `case_ext()` |
+| NGUYỄN TẤN PHƯỚC  | 23127536 | Bonus C: `corrupt()`, `case_ext()` |
