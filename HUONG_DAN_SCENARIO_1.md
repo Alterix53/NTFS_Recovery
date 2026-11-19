@@ -245,4 +245,7 @@ Nguyên tắc:
 3. ❌ **Lỗi đường dẫn file trích xuất (`path`)**:
    * Đề bài yêu cầu trích xuất toàn bộ file trong thư mục dữ liệu (`DATA/`). Tên và đường dẫn phải chuẩn hóa (dùng dấu `/`, không chứa thư mục rỗng, đường dẫn tính từ gốc volume). Đường dẫn đúng chiếm **10% điểm số**.
 4. ❌ **Thời gian thực thi quá 10 phút**:
-   * Khi quét đĩa tìm chữ ký `FILE`, không nên quét từng byte đơn lẻ (`range(0, size, 1)`), mà phải quét theo bước nhảy sector `range(0, size, bytes_per_sec)` (bước 512 byte) vì cấu trúc bản ghi MFT luôn được căn chỉnh theo sector. Quét theo sector chỉ mất chưa đến 1 giây cho volume 512 MB.
+   * Khi quét đĩa tìm chữ ký `FILE`, không nên quét từng byte đơn lẻ (`range(0, size, 1)`), mà phải quét theo bước nhảy sector `img.tim(b"FILE", o, None, bps)` (bước 512 byte) vì cấu trúc bản ghi MFT luôn được căn chỉnh theo sector. Quét bằng `img.tim` chỉ mất chưa đến 0.01 giây cho volume 512 MB.
+5. ⚠️ **Giới hạn đã biết về `$ATTRIBUTE_LIST` (Ghi vào báo cáo)**:
+   * **Mô tả**: Khi một tập tin có số lượng thuộc tính quá lớn hoặc bị phân mảnh cực nhiều, NTFS sẽ sử dụng thuộc tính `$ATTRIBUTE_LIST` (mã loại `0x20`) để trỏ đến các bản ghi MFT phụ (Non-base / Secondary MFT Records).
+   * **Hiện trạng xử lý**: Chương trình đã tích hợp cơ chế phát hiện và đưa ra cảnh báo (`log.canh_bao`) khi bắt gặp thuộc tính `$ATTRIBUTE_LIST` (0x20). Trong phạm vi đồ án và các bộ ảnh thực nghiệm thông thường (các tập tin dữ liệu và bảng MFT vừa phải nằm trọn trong bản ghi gốc), việc chưa phân tích các bản ghi mở rộng phân tán là một giới hạn đã biết (known limitation) được ghi nhận rõ ràng trong báo cáo.
