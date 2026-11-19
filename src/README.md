@@ -1,51 +1,142 @@
-# Khung chương trình — Đồ án phục hồi dữ liệu
+# Khung chương trình — Đồ án phục hồi dữ liệu NTFS
 
-Khung chỉ lo phần "ống nước": dòng lệnh, đọc byte, nhật ký, lưu kết quả, checksum exFAT, tự kiểm tra. **Toàn bộ việc giải mã hệ thống tập tin và phục hồi là phần của nhóm**, viết trong `bai_lam.py` (có thể tách thêm tệp và import).
+Chương trình được xây dựng trên skeleton của giảng viên, hỗ trợ đọc ảnh đĩa, phân tích cấu trúc NTFS, phục hồi dữ liệu và ghi nhật ký. Toàn bộ thuật toán phân tích hệ thống tập tin và khôi phục được triển khai trong `bai_lam.py`.
 
-| Tệp | Nội dung | Được sửa? |
-| --- | --- | --- |
-| `bai_lam.py` | Lớp `BaiLam`: `info`, `case1`, `case2`, `case3`, `case_ext`, `repair`, `corrupt` | **Có — phần làm bài** |
-| `nhom.json` | Mã nhóm, hệ thống, thành viên, phần cộng điểm đăng ký | **Có** |
-| `recover.py` | Giao diện dòng lệnh thống nhất | Không |
-| `binio.py` | `AnhDia`: đọc u8/u16/u32/u64 (LE/BE), tìm chuỗi byte, hexdump, sao chép để ghi | Không |
-| `tienich.py` | `NhatKy`, `ThuMucKetQua`, checksum exFAT | Không |
-| `selftest.py` | Chạy chương trình trên bộ ảnh mẫu và so với đáp án mẫu | Không |
+## 1. Cấu trúc chương trình
 
-Yêu cầu: Python 3.9 trở lên, **chỉ thư viện chuẩn**. Cấm thư viện phân tích hệ thống tập tin (pytsk3, dfvfs, pyfatfs, libfsntfs…) và cấm gọi công cụ ngoài (`subprocess`, `os.system`).
+| Tệp | Chức năng | Được sửa? |
+|---|---|---|
+| `bai_lam.py` | Class `BaiLam`: `info`, `case1`, `case2`, `case3`, `case_ext`, `repair`, `corrupt`; các hàm phân tích NTFS | Có |
+| `nhom.json` | Thông tin nhóm và đăng ký phần cộng điểm | Có |
+| `mo_rong.json` | Đặc tả Bonus C | Có |
+| `recover.py` | Giao diện dòng lệnh (CLI) | Không |
+| `binio.py` | Đọc byte, tìm kiếm và sao chép ảnh đĩa | Không |
+| `tienich.py` | Nhật ký, lưu dữ liệu và checksum | Không |
+| `selftest.py` | Tự kiểm thử bằng bộ ảnh mẫu | Không |
 
-## Dòng lệnh
+**Yêu cầu:** Python 3.9 trở lên, chỉ sử dụng thư viện chuẩn. Không dùng thư viện phân tích hệ thống tập tin hoặc gọi công cụ bên ngoài trong thuật toán.
 
-```
-python recover.py --image anh.img --info              # in tham số và danh sách tập tin
-python recover.py --image anh.img --info --json       # dạng JSON (giảng viên dùng khi chấm)
-python recover.py --image case2.img --case 2 --out ket_qua/
-python recover.py --image case1.img --case 1 --out ket_qua/ --repair da_sua.img
-python recover.py --image clean.img --corrupt mo_rong.json --out anh_hong.img
-python recover.py ... --log nhat_ky.jsonl             # lưu thêm nhật ký ra tệp
-```
+## 2. Hướng dẫn chạy chương trình
 
-* `--info --json` phải trả về `{"fs": ..., "cluster_size": ..., "files": [{"path": "DATA/A12.JPG", "size": 123}]}` (chỉ tập tin, không thư mục; đường dẫn tính từ gốc volume, dùng `/`).
-* `--case` lưu tập tin bằng `out.luu("DATA/A12.JPG", data)` — giữ đúng đường dẫn gốc; đường dẫn đúng được tính điểm riêng.
-* Nhật ký (stderr) là căn cứ đối chiếu với báo cáo: ghi mọi bước quan trọng bằng `self.log.buoc(...)`, mọi lựa chọn bằng `self.log.quyet_dinh(...)`.
-* Không bao giờ ghi lên ảnh đầu vào: `--repair` và `--corrupt` phải dùng `img.sao_chep(duong_dan_moi)`.
+Chuyển vào thư mục `src`:
 
-## Tự kiểm tra
-
-Bộ ảnh mẫu (`mau/<he_thong>/`) được phát kèm đáp án. Chạy:
-
-```
-python selftest.py --mau duong_dan/mau/ntfs
+```bash
+cd src
 ```
 
-Kết quả cho biết số tập tin khôi phục đúng nội dung và đúng đường dẫn ở từng tình huống. Giảng viên chấm đúng theo cách này, nhưng trên **ảnh của nhóm và một bộ ảnh ẩn** — vì vậy không được cố định offset, số cluster hay tên tập tin của ảnh mẫu/ảnh nhóm trong mã.
+Đọc thông tin NTFS:
 
-## Phần cộng điểm
+```bash
+python recover.py --image clean.img --info --json
+```
 
-Khai báo trong `nhom.json`:
+Khôi phục các tình huống chính:
+
+```bash
+python recover.py --image case1.img --case 1 --out recovered/
+python recover.py --image case2.img --case 2 --out recovered/
+python recover.py --image case3.img --case 3 --out recovered/
+```
+
+Ghi nhật ký bằng tham số `--log` khi cần.
+
+Kết quả được lưu bằng `out.luu()` với đúng tên và đường dẫn gốc. Chương trình không sửa trực tiếp ảnh đầu vào.
+
+## 3. Kiểm thử
+
+Sử dụng bộ dữ liệu mẫu NTFS của giảng viên:
+
+```bash
+python selftest.py --mau /duong_dan_den/mau/ntfs
+```
+
+Chương trình kiểm tra thông tin hệ thống tập tin, nội dung và đường dẫn khôi phục của từng tình huống dựa trên đáp án mẫu.
+
+Các thuật toán không cố định offset, số cluster hay thông tin riêng của ảnh mẫu.
+
+## 4. Bonus C — Lost MBR Partition Table Entry
+
+Nhóm lựa chọn tình huống mở rộng `ext-mbr` trên hệ thống NTFS.
+
+**Mô tả:** Mục phân vùng đầu tiên trong bảng MBR bị xóa tại offset `0x1BE` (16 byte). Chương trình phải tìm lại NTFS volume và khôi phục dữ liệu.
+
+### 4.1. Cấu hình
+
+Trong `nhom.json`:
 
 ```json
-"cong_diem": {"repair": [1, 2], "mo_rong": {"tinh_huong": "ext-size", "dac_ta": "mo_rong.json"}}
+"cong_diem": {
+  "repair": [],
+  "mo_rong": {
+    "tinh_huong": "ext-mbr",
+    "dac_ta": "mo_rong.json"
+  }
+}
 ```
 
-* `repair`: danh sách tình huống có cài `--repair`. Ảnh sửa được kiểm tra bằng cách đọc lại toàn bộ tập tin và chạy `fsck` chế độ chỉ đọc.
-* `mo_rong`: một trong `ext-root`, `ext-size`, `ext-mbr`. `corrupt()` phải trả về danh sách vùng đã sửa, ví dụ `[{"offset": 61468, "length": 4, "cau_truc": "DIR_FileSize của A12.JPG"}]`; `recover.py` tự ghi danh sách này ra `<ảnh hỏng>.changes.json`. Mọi byte thay đổi phải nằm trong các vùng đã khai và không được chạm vùng dữ liệu tập tin. Sau đó `--case ext` sẽ được chạy trên ảnh nhóm tự làm hỏng và trên ảnh ẩn cùng tình huống.
+File `mo_rong.json`:
+
+```json
+{
+  "tinh_huong": "ext-mbr",
+  "partition_index": 0
+}
+```
+
+### 4.2. Gây lỗi
+
+Sử dụng **whole-disk image có MBR**, không phải NTFS volume image:
+
+```bash
+python recover.py \
+  --image clean-whole-disk.img \
+  --corrupt mo_rong.json \
+  --out damaged.img \
+  --log bonus_corrupt.jsonl
+```
+
+Hàm `corrupt()` tạo ảnh sao chép và xóa 16 byte của MBR Partition Entry 0, đồng thời trả về vùng đã thay đổi để chương trình tạo file `damaged.img.changes.json`.
+
+### 4.3. Khôi phục
+
+```bash
+python recover.py \
+  --image damaged.img \
+  --case ext \
+  --out recovered/ \
+  --log bonus_recovery.jsonl
+```
+
+Hàm `case_ext()` tìm NTFS Boot Sector, xác thực MFT, xác định vị trí volume và khôi phục các tập tin trong thư mục `DATA`.
+
+### 4.4. Kiểm tra kết quả
+
+Kiểm tra 16 byte đã bị xóa:
+
+```bash
+xxd -s 0x1BE -l 16 damaged.img
+```
+
+Kiểm tra kết quả khôi phục:
+
+```bash
+find recovered/ -type f
+```
+
+Đối chiếu SHA-256 của các tập tin khôi phục với dữ liệu gốc để xác nhận tính toàn vẹn.
+
+## 5. Sản phẩm nộp
+
+- Báo cáo PDF tối đa 20 trang, gồm cấu trúc NTFS được sử dụng, chẩn đoán, cơ sở lý thuyết, mã giả và bằng chứng hex.
+- Source code cùng thông tin phân công thực hiện.
+- Thư mục `recovered/` có `SHA256SUMS` và nhật ký chạy trên ảnh của nhóm.
+- Bonus C: `mo_rong.json` và ảnh tự gây hỏng `damaged.img`.
+
+## 6. Phân công thành viên
+
+| Thành viên | MSSV | Phụ trách |
+|---|---|---|
+| NGUYỄN ĐẶNG MINH DUY | 23127042 | Case 1 |
+| NGUYỄN ANH KIỆT | 23127005 | `info()` và Case 2 |
+| NGUYỄN LÊ THIÊN LÝ | [MSSV] | Case 3 |
+| NGUYỄN TẤN PHƯỚC  | 23127536 | Bonus C: `corrupt()`, `case_ext()` |
