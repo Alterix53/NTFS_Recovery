@@ -5,7 +5,7 @@
   {"mssv": "", "ho_ten": "", "phu_trach": ""}
  ],
  "cong_diem": {
-  "repair": [],
+  "repair": [1],
   "mo_rong": {
     "tinh_huong": "ext-mbr",
     "dac_ta": "mo_rong.json"

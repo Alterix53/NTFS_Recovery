@@ -91,13 +91,32 @@ class AnhVolume:
         return int.from_bytes(self.doc(offset, 8), "little")
 
 
+def ma_hoa_0x40(rec_size, cluster):
+    """Mã hóa kích thước bản ghi MFT vào trường 0x40 của Boot Sector."""
+    if rec_size >= cluster:
+        return rec_size // cluster
+    return -(rec_size.bit_length() - 1)
+
+
 class NTFS:
-    def __init__(self, img, log, volume_offset=0):
+    def __init__(self, img, log, volume_offset=0, override_boot=None):
         self.img = AnhVolume(img, volume_offset)
         self.log = log
         self.volume_offset = volume_offset
 
-        self._doc_boot()
+        if override_boot:
+            self.bps = override_boot["bps"]
+            self.spc = override_boot["spc"]
+            self.cluster = override_boot["cluster"]
+            self.mft_lcn = override_boot["mft_lcn"]
+            self.tong_sector = override_boot.get("tong_sector", img.u64(0x28))
+            self.rec_size = override_boot["rec_size"]
+            log.buoc("bytes/sector (suy luận)", 0x0B, self.bps)
+            log.buoc("sectors/cluster (suy luận)", 0x0D, self.spc)
+            log.buoc("$MFT LCN (suy luận)", 0x30, self.mft_lcn)
+            log.buoc("kích thước MFT record (suy luận)", 0x40, self.rec_size)
+        else:
+            self._doc_boot()
         self._doc_mft0()
 
     # ---------- boot sector ----------
@@ -131,12 +150,14 @@ class NTFS:
 
     # ---------- attribute ----------
     @staticmethod
-    def attrs(rec):
+    def attrs(rec, log=None):
         pos = struct.unpack_from("<H", rec, 0x14)[0]
         while pos + 8 <= len(rec):
             t, ln = struct.unpack_from("<II", rec, pos)
             if t == 0xFFFFFFFF or ln == 0 or pos + ln > len(rec):
                 break
+            if t == ATTR_ATTRIBUTE_LIST and log is not None:
+                log.canh_bao("Phát hiện thuộc tính $ATTRIBUTE_LIST (0x20) - giới hạn đã biết chưa hỗ trợ bản ghi MFT phụ", offset=pos)
             nonres, name_len = rec[pos + 8], rec[pos + 9]
             a = {"type": t, "nonres": nonres, "name_len": name_len}
             if not nonres:
@@ -421,12 +442,24 @@ def index_entries(buf, start):
 
 
 class NTFS:
-    def __init__(self, img, log, volume_offset=0):
+    def __init__(self, img, log, volume_offset=0, override_boot=None):
         self.img = AnhVolume(img, volume_offset)
         self.log = log
         self.volume_offset = volume_offset
 
-        self._doc_boot()
+        if override_boot:
+            self.bps = override_boot["bps"]
+            self.spc = override_boot["spc"]
+            self.cluster = override_boot["cluster"]
+            self.mft_lcn = override_boot["mft_lcn"]
+            self.tong_sector = override_boot.get("tong_sector", img.u64(0x28))
+            self.rec_size = override_boot["rec_size"]
+            log.buoc("bytes/sector (suy luận)", 0x0B, self.bps)
+            log.buoc("sectors/cluster (suy luận)", 0x0D, self.spc)
+            log.buoc("$MFT LCN (suy luận)", 0x30, self.mft_lcn)
+            log.buoc("kích thước MFT record (suy luận)", 0x40, self.rec_size)
+        else:
+            self._doc_boot()
         self._doc_mft0()
 
     # ---------- boot sector ----------
@@ -460,12 +493,14 @@ class NTFS:
 
     # ---------- attribute ----------
     @staticmethod
-    def attrs(rec):
+    def attrs(rec, log=None):
         pos = struct.unpack_from("<H", rec, 0x14)[0]
         while pos + 8 <= len(rec):
             t, ln = struct.unpack_from("<II", rec, pos)
             if t == 0xFFFFFFFF or ln == 0 or pos + ln > len(rec):
                 break
+            if t == ATTR_ATTRIBUTE_LIST and log is not None:
+                log.canh_bao("Phát hiện thuộc tính $ATTRIBUTE_LIST (0x20) - giới hạn đã biết chưa hỗ trợ bản ghi MFT phụ", offset=pos)
             nonres, name_len = rec[pos + 8], rec[pos + 9]
             a = {"type": t, "nonres": nonres, "name_len": name_len}
             if not nonres:
@@ -568,6 +603,103 @@ def khop_magic(ten, head):
     if ext in ("txt", "text", "log", "md"):
         return len(head) > 0 and all(b in (9, 10, 13) or 32 <= b < 127 for b in head)
     return False
+
+
+def chuan_doan_case1(img, log):
+    """Tự động suy luận các tham số Boot Sector bị hỏng cho Scenario 1."""
+    log.buoc("Bắt đầu chẩn đoán Boot Sector bị sai (Scenario 1)", offset=0x00)
+
+    bps = img.u16(0x0B)
+    if bps < 512 or bps > 4096 or (bps & (bps - 1)):
+        log.canh_bao("bytes/sector bất thường, dùng 512", offset=0x0B, gia_tri=bps)
+        bps = 512
+
+    tong_sector = img.u64(0x28)
+    sai_sec0_spc = img.u8(0x0D)
+    sai_sec0_lcn = img.u64(0x30)
+    sai_sec0_rec = img.u8(0x40)
+    log.buoc("Sector 0 (Primary Boot): sectors/cluster đang sai", 0x0D, sai_sec0_spc)
+    log.buoc("Sector 0 (Primary Boot): $MFT LCN đang sai", 0x30, sai_sec0_lcn)
+    log.buoc("Sector 0 (Primary Boot): clusters/record đang sai", 0x40, sai_sec0_rec)
+
+    backup_offset = tong_sector * bps
+    if backup_offset + bps <= img.kich_thuoc:
+        log.buoc("Sector cuối (Backup Boot): sectors/cluster đang sai",
+                 backup_offset + 0x0D, img.u8(backup_offset + 0x0D))
+        log.buoc("Sector cuối (Backup Boot): $MFT LCN đang sai",
+                 backup_offset + 0x30, img.u64(backup_offset + 0x30))
+        log.buoc("Sector cuối (Backup Boot): clusters/record đang sai",
+                 backup_offset + 0x40, img.u8(backup_offset + 0x40))
+
+    o = 0
+    while True:
+        o = img.tim(b"FILE", o, None, bps)
+        if o < 0:
+            break
+        if o + 0x42 > img.kich_thuoc:
+            break
+
+        alloc_sz = img.u32(o + 0x1C)
+        if (alloc_sz < bps or alloc_sz > 65536
+                or (alloc_sz & (alloc_sz - 1)) != 0
+                or o + alloc_sz > img.kich_thuoc):
+            o += bps
+            continue
+
+        rec = ap_dung_fixup(img.doc(o, alloc_sz), bps, log=None)
+        if rec is None:
+            o += bps
+            continue
+
+        has_mft_name = False
+        cand_runs = None
+        for a in NTFS.attrs(rec, log=None):
+            if a["type"] == ATTR_FN and not a["nonres"]:
+                k = parse_key(a["content"])
+                if k and k["name"] == "$MFT":
+                    has_mft_name = True
+            elif a["type"] == ATTR_DATA and a["name_len"] == 0 and a["nonres"]:
+                cand_runs = a.get("runs")
+
+        if not has_mft_name or not cand_runs:
+            o += bps
+            continue
+
+        cand_lcn = cand_runs[0][0]
+        if cand_lcn is None or cand_lcn <= 0 or o % cand_lcn != 0:
+            o += bps
+            continue
+
+        cand_cluster = o // cand_lcn
+        if not (bps <= cand_cluster <= 65536
+                and (cand_cluster & (cand_cluster - 1)) == 0):
+            o += bps
+            continue
+
+        mft_lcn = cand_lcn
+        rec_size = alloc_sz
+        cluster = cand_cluster
+        spc = cluster // bps
+        break
+    else:
+        raise RuntimeError("Không tìm thấy Bản ghi 0 của $MFT trên ảnh đĩa")
+
+    log.quyet_dinh("Tìm thấy Bản ghi 0 của $MFT", offset=o)
+    rec_size_byte = ma_hoa_0x40(rec_size, cluster)
+    log.quyet_dinh("Xác định kích thước bản ghi MFT từ allocated size (+0x1C)",
+                   rec_size=rec_size, byte_0x40=rec_size_byte)
+    log.quyet_dinh("Suy ra $MFT LCN đúng từ Runlist của Bản ghi 0", mft_lcn=mft_lcn)
+    log.quyet_dinh("Tính toán thông số đúng", cluster_size=cluster, sectors_per_cluster=spc)
+
+    return {
+        "bps": bps,
+        "spc": spc,
+        "cluster": cluster,
+        "mft_lcn": mft_lcn,
+        "rec_size": rec_size,
+        "rec_size_byte": rec_size_byte,
+        "tong_sector": tong_sector,
+    }
 ##############
 
 class BaiLam:
@@ -579,6 +711,7 @@ class BaiLam:
         fs = NTFS(img, self.log)
         files = []
         self._duyet(fs, REC_ROOT, "", files, set(), 0)
+        files = [{"path": f["path"], "size": f["size"]} for f in files]
         return {"fs": "ntfs", "cluster_size": fs.cluster,
                 "bytes_per_sector": fs.bps, "sectors_per_cluster": fs.spc,
                 "total_sectors": fs.tong_sector, "mft_lcn": fs.mft_lcn,
@@ -603,7 +736,7 @@ class BaiLam:
             if key["flags"] & FLAG_DIR_KEY:
                 self._duyet(fs, ref, path + "/", files, seen, depth + 1)
             else:
-                files.append({"path": path, "size": key["real"]})
+                files.append({"path": path, "size": key["real"], "ref": ref})
 
     # ------------------------------------------------------------ case 2
     def case2(self, img, out):
@@ -707,12 +840,26 @@ class BaiLam:
 
     # ----- các hàm của thành viên khác / bonus -----
     def case1(self, img, out):
-        raise NotImplementedError("case1")
+        L = self.log
+        boot_params = chuan_doan_case1(img, L)
+        fs = NTFS(img, L, override_boot=boot_params)
+
+        files = []
+        self._duyet(fs, REC_ROOT, "", files, set(), 0)
+        L.quyet_dinh(f"Tìm thấy {len(files)} tập tin cần trích xuất", so_luong=len(files))
+
+        for f in files:
+            rec = fs.doc_record(f["ref"])
+            if rec is None:
+                continue
+            _, d = fs.thong_tin_record(rec)
+            if d is not None:
+                data = fs.doc_data_attr(d)
+                out.luu(f["path"], data)
+                L.buoc(f"Đã trích xuất {f['path']}", fs.offset_record(f["ref"]), len(data))
 
     def case3(self, img, out):
         raise NotImplementedError("case3")
-
-    
 
     def case_ext(self, img, out):
         """Bonus C: Phục hồi NTFS khi mất MBR partition entry 0."""
@@ -879,7 +1026,6 @@ class BaiLam:
     def repair(self, img, case, anh_moi):
         raise NotImplementedError("repair")
 
-    
     def corrupt(self, img, dac_ta, anh_hong):
         """Bonus C: Xóa MBR partition entry 0."""
 

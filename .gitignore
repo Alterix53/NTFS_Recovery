@@ -1,0 +1,30 @@
+# Disk images and dumps
+*.img
+*.vhd
+*.iso
+*.bin
+
+# Image and test directories
+/anh/
+anh/
+ket_qua/
+/ket_qua/
+src/ket_qua/
+/src/ket_qua/
+*.changes.json
+
+# Python cache and bytecode
+__pycache__/
+*/__pycache__/
+*.py[cod]
+*$py.class
+
+# Logs
+*.log
+*.jsonl
+
+# Temporary and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
