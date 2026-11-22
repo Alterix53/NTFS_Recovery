@@ -16,12 +16,14 @@ FLAG_DIR_KEY = 0x10000000         # cờ "thư mục" trong key $FILE_NAME
 def ap_dung_fixup(buf, bps=512, log=None):
     """Áp dụng Update Sequence Array (USA / Fixup) cho MFT record hoặc khối INDX.
     Trả về bytes đã khôi phục, hoặc None nếu không hợp lệ hoặc fixup sai lệch USN.
+    (Theo Project.pdf: ảnh NTFS tạo bằng mkntfs -Q -c 4096 -s 512, bước nhảy Fixup = 512B).
     """
     if len(buf) < 0x2A:
         return None
     b = bytearray(buf)
     usa_off, usa_cnt = struct.unpack_from("<HH", b, 4)  # +0x04: offset mảng USA (2B), +0x06: số phần tử n+1 (2B)
-    if usa_off + usa_cnt * 2 > len(b):
+    # Chặn usa_cnt < 2 (tránh khối rác bắt đầu bằng "FILE" có usa_cnt=0/1 lọt qua vòng lặp fixup)
+    if usa_off < 8 or usa_cnt < 2 or usa_off + usa_cnt * 2 > len(b):
         return None
     usn = bytes(b[usa_off:usa_off + 2])                 # 2 byte đầu tại usa_off: Update Sequence Number (USN)
     for k in range(1, usa_cnt):
@@ -227,13 +229,15 @@ class NTFS:
 
     # ---------- dữ liệu của $DATA ----------
     def doc_data_attr(self, a):
+        # Project.pdf (Reduced dataset): file text < 600B nằm dạng Resident (nonres=0);
+        # 2 JPEG, 1 PNG, 1 PDF nằm dạng Non-resident (nonres=1), không nén LZNT1 / mã hóa EFS.
         if not a["nonres"]:
-            return a["content"]
+            return a["content"]                         # Resident: nội dung nằm trực tiếp trong MFT record
         out = bytearray()
         for lcn, n in a["runs"]:
             out += bytes(n * self.cluster) if lcn is None \
-                else self.img.doc(lcn * self.cluster, n * self.cluster)
-        return bytes(out[:a["real"]])
+                else self.img.doc(lcn * self.cluster, n * self.cluster)  # Non-resident: đọc từng run (hỗ trợ nhiều run & sparse)
+        return bytes(out[:a["real"]])                   # cắt đúng theo real size (+0x30 của header $DATA)
 
     def thong_tin_record(self, rec):
         """Gom: danh sách $FILE_NAME, $DATA không tên."""
@@ -249,23 +253,26 @@ class NTFS:
 
     # ---------- thư mục ----------
     def doc_thu_muc(self, rec):
+        # Project.pdf (Reduced dataset): DATA chỉ dùng $INDEX_ROOT (0x90, không có khối INDX);
+        # thư mục gốc $Root (Record 5) dùng thêm 1 khối INDX qua $INDEX_ALLOCATION (0xA0).
+        # Ở Scenario 1 mọi cấu trúc thư mục đều nguyên vẹn (không xóa/co thư mục) nên không có khối INDX cũ cần lọc qua $BITMAP (0xB0).
         ents, blk = [], 4096
         for a in self.attrs(rec, self.log):
-            if a["type"] == ATTR_INDEX_ROOT:
+            if a["type"] == ATTR_INDEX_ROOT:            # 0x90 ($INDEX_ROOT): chứa entry nhỏ hoặc nút gốc B-tree
                 c = a["content"]
-                blk = struct.unpack_from("<I", c, 8)[0]
-                eo = struct.unpack_from("<I", c, 0x10)[0]
+                blk = struct.unpack_from("<I", c, 8)[0]     # +0x08 của $INDEX_ROOT: kích thước 1 khối INDX (4B, thường 4096)
+                eo = struct.unpack_from("<I", c, 0x10)[0]   # +0x10 của $INDEX_ROOT: offset tới index entry đầu tiên (tính từ +0x10)
                 ents += index_entries(c, 0x10 + eo)
-            elif a["type"] == ATTR_INDEX_ALLOC:
+            elif a["type"] == ATTR_INDEX_ALLOC:         # 0xA0 ($INDEX_ALLOCATION): chứa các khối INDX bên ngoài (dùng cho $Root)
                 raw = self.doc_data_attr(a)
                 for p in range(0, len(raw), blk):
                     b = raw[p:p + blk]
-                    if b[:4] != b"INDX":
+                    if b[:4] != b"INDX":                # +0x00 của khối INDX: chữ ký "INDX" (4B)
                         continue
-                    b = self.fixup(b)
+                    b = self.fixup(b)                   # áp dụng Fixup (USA) cho khối INDX trước khi đọc entry
                     if b is None:
                         continue
-                    eo = struct.unpack_from("<I", b, 0x18)[0]
+                    eo = struct.unpack_from("<I", b, 0x18)[0]  # +0x18 của khối INDX: offset tới index entry đầu tiên (tính từ +0x18)
                     ents += index_entries(b, 0x18 + eo)
         return ents
 
@@ -451,6 +458,7 @@ def chuan_doan_case1(img, log):
             break
 
         alloc_sz = img.u32(o + 0x1C)                    # +0x1C: kích thước cấp phát (allocated size) của MFT record (4B, vd 1024)
+        # Project.pdf dùng mkntfs -Q -c 4096 -s 512 (bps=512, rec_size=1024); chấp nhận lũy thừa 2 trong [bps, 64 KiB]
         if (alloc_sz < bps or alloc_sz > 65536
                 or (alloc_sz & (alloc_sz - 1)) != 0
                 or o + alloc_sz > img.kich_thuoc):
@@ -464,13 +472,17 @@ def chuan_doan_case1(img, log):
 
         has_mft_name = False
         cand_runs = None
-        for a in NTFS.attrs(rec, log=None):             # nhảy từ +0x14 (offset attribute đầu tiên) duyệt từng attribute
-            if a["type"] == ATTR_FN and not a["nonres"]:  # 0x30 ($FILE_NAME): đọc tên file tại +0x42 của nội dung attribute
-                k = parse_key(a["content"])
-                if k and k["name"] == "$MFT":           # khớp chính xác "$MFT" (loại "$MFTMirr" ở Record 1)
-                    has_mft_name = True
-            elif a["type"] == ATTR_DATA and a["name_len"] == 0 and a["nonres"]:  # 0x80 ($DATA không tên, non-resident)
-                cand_runs = a.get("runs")               # lấy runlist đã giải mã từ offset +0x20 của header $DATA
+        try:
+            for a in NTFS.attrs(rec, log=None):         # nhảy từ +0x14 (offset attribute đầu tiên) duyệt từng attribute
+                if a["type"] == ATTR_FN and not a["nonres"]:  # 0x30 ($FILE_NAME): đọc tên file tại +0x42 của nội dung attribute
+                    k = parse_key(a["content"])
+                    if k and k["name"] == "$MFT":       # khớp chính xác "$MFT" (loại "$MFTMirr" ở Record 1)
+                        has_mft_name = True
+                elif a["type"] == ATTR_DATA and a["name_len"] == 0 and a["nonres"]:  # 0x80 ($DATA không tên, non-resident)
+                    cand_runs = a.get("runs")           # lấy runlist đã giải mã từ offset +0x20 của header $DATA
+        except (struct.error, ValueError, IndexError):  # tránh crash nếu gặp khối dữ liệu rác chứa chữ ký "FILE" trước $MFT
+            o += bps
+            continue
 
         if not has_mft_name or not cand_runs:
             o += bps
@@ -482,8 +494,26 @@ def chuan_doan_case1(img, log):
             continue
 
         cand_cluster = o // cand_lcn                    # suy ra kích thước cluster = offset byte của Record 0 / mft_lcn
+        # NTFS chuẩn (0x0D dương 1..128): cluster là lũy thừa của 2 trong [bps, 64 KiB] (loại bản sao trong $MFTMirr)
         if not (bps <= cand_cluster <= 65536
-                and (cand_cluster & (cand_cluster - 1)) == 0):  # phải là lũy thừa của 2 <= 64 KiB (loại bản sao trong $MFTMirr)
+                and (cand_cluster & (cand_cluster - 1)) == 0):
+            o += bps
+            continue
+
+        # Xác thực chéo Record 5 ($Root) theo cand_runs để loại trừ tuyệt đối $MFTMirr trong mọi bố cục đĩa
+        # ($MFTMirr chỉ sao lưu 4 bản ghi 0..3 nên không có Record 5; ngoài ra mkntfs luôn đặt $MFT trước $MFTMirr).
+        byte5, off5 = REC_ROOT * alloc_sz, None
+        for r_lcn, r_cnt in cand_runs:
+            if byte5 < r_cnt * cand_cluster:
+                off5 = None if r_lcn is None else r_lcn * cand_cluster + byte5
+                break
+            byte5 -= r_cnt * cand_cluster
+        if off5 is None or off5 + alloc_sz > img.kich_thuoc:
+            o += bps
+            continue
+        raw5 = img.doc(off5, alloc_sz)
+        rec5 = ap_dung_fixup(raw5, bps, log=None) if raw5[:4] == b"FILE" else None
+        if rec5 is None or not (NTFS.flags(rec5) & 2):  # +0x16 của Record 5: bit 1 (0x02) xác nhận là thư mục $Root
             o += bps
             continue
 
