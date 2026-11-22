@@ -20,33 +20,33 @@ def ap_dung_fixup(buf, bps=512, log=None):
     if len(buf) < 0x2A:
         return None
     b = bytearray(buf)
-    usa_off, usa_cnt = struct.unpack_from("<HH", b, 4)
+    usa_off, usa_cnt = struct.unpack_from("<HH", b, 4)  # +0x04: offset mảng USA (2B), +0x06: số phần tử n+1 (2B)
     if usa_off + usa_cnt * 2 > len(b):
         return None
-    usn = bytes(b[usa_off:usa_off + 2])
+    usn = bytes(b[usa_off:usa_off + 2])                 # 2 byte đầu tại usa_off: Update Sequence Number (USN)
     for k in range(1, usa_cnt):
-        end = k * bps
+        end = k * bps                                   # vị trí kết thúc của sector thứ k
         if end > len(b):
             break
-        if bytes(b[end - 2:end]) != usn:
+        if bytes(b[end - 2:end]) != usn:                # 2 byte cuối mỗi sector (+0x1FE, +0x3FE...) phải khớp USN
             if log:
                 log.canh_bao("fixup: 2 byte cuối sector không khớp USN", sector=k)
             return None
-        b[end - 2:end] = b[usa_off + 2 * k:usa_off + 2 * k + 2]
+        b[end - 2:end] = b[usa_off + 2 * k:usa_off + 2 * k + 2]  # hoàn nguyên 2 byte gốc từ mảng USA
     return bytes(b)
 
 
 def runlist(data):
     """Giải mã runlist -> [(lcn | None nếu sparse, số cluster)]"""
     runs, pos, lcn = [], 0, 0
-    while pos < len(data) and data[pos] != 0:
-        h = data[pos]; pos += 1
+    while pos < len(data) and data[pos] != 0:           # byte 0x00 đánh dấu kết thúc runlist
+        h = data[pos]; pos += 1                         # byte header của run: 4 bit thấp = số byte length, 4 bit cao = số byte LCN offset
         ln, lo = h & 0xF, h >> 4
-        length = int.from_bytes(data[pos:pos + ln], "little"); pos += ln
+        length = int.from_bytes(data[pos:pos + ln], "little"); pos += ln  # đọc ln byte: số lượng cluster của run
         if lo == 0:
             runs.append((None, length))
         else:
-            lcn += int.from_bytes(data[pos:pos + lo], "little", signed=True)
+            lcn += int.from_bytes(data[pos:pos + lo], "little", signed=True)  # đọc lo byte (có dấu): độ dời LCN bắt đầu
             runs.append((lcn, length))
         pos += lo
     return runs
@@ -56,14 +56,15 @@ def parse_key(k):
     """Key $FILE_NAME (dùng cho cả index entry và attribute $FILE_NAME)."""
     if len(k) < 0x42:
         return None
-    nl = k[0x40]
-    raw = bytes(k[0x42:0x42 + 2 * nl])
-    return {"parent": int.from_bytes(k[0:6], "little"),
-            "times": struct.unpack_from("<4Q", k, 8),
-            "alloc": struct.unpack_from("<Q", k, 0x28)[0],
-            "real": struct.unpack_from("<Q", k, 0x30)[0],
-            "flags": struct.unpack_from("<I", k, 0x38)[0],
-            "name_len": nl, "ns": k[0x41], "name_raw": raw,
+    nl = k[0x40]                                        # +0x40: độ dài tên file (số ký tự UTF-16LE, 1B)
+    raw = bytes(k[0x42:0x42 + 2 * nl])                  # +0x42: chuỗi tên file mã hóa UTF-16LE (2 * nl byte)
+    return {"parent": int.from_bytes(k[0:6], "little"), # +0x00: MFT record cha (6B đầu của 8B file reference)
+            "times": struct.unpack_from("<4Q", k, 8),   # +0x08: 4 mốc thời gian tạo/sửa/MFT/truy cập (4 x 8B)
+            "alloc": struct.unpack_from("<Q", k, 0x28)[0],  # +0x28: kích thước cấp phát (8B)
+            "real": struct.unpack_from("<Q", k, 0x30)[0],   # +0x30: kích thước thực của file (8B)
+            "flags": struct.unpack_from("<I", k, 0x38)[0],  # +0x38: cờ thuộc tính file/thư mục (4B)
+            "name_len": nl, "ns": k[0x41],              # +0x41: namespace của tên file (1B, 2 = DOS 8.3)
+            "name_raw": raw,
             "name": raw.decode("utf-16le", "replace")}
 
 
@@ -150,12 +151,12 @@ class NTFS:
     # ---------- boot sector ----------
     def _doc_boot(self):
         i, L = self.img, self.log
-        self.bps = i.u16(0x0B)
-        self.spc = i.u8(0x0D)
+        self.bps = i.u16(0x0B)                          # 0x0B: bytes per sector (2B)
+        self.spc = i.u8(0x0D)                           # 0x0D: sectors per cluster (1B)
         self.cluster = self.bps * self.spc
-        self.mft_lcn = i.u64(0x30)
-        self.tong_sector = i.u64(0x28)
-        n = i.s8(0x40)
+        self.mft_lcn = i.u64(0x30)                      # 0x30: cluster bắt đầu của $MFT - LCN (8B)
+        self.tong_sector = i.u64(0x28)                  # 0x28: tổng số sector của volume (8B)
+        n = i.s8(0x40)                                  # 0x40: mã kích thước MFT record (1B có dấu: >0 là số cluster, <0 là 2^(-n) byte)
         self.rec_size = n * self.cluster if n > 0 else 1 << (-n)
         L.buoc("bytes/sector", 0x0B, self.bps)
         L.buoc("sectors/cluster", 0x0D, self.spc)
@@ -169,25 +170,25 @@ class NTFS:
     # ---------- attribute ----------
     @staticmethod
     def attrs(rec, log=None):
-        pos = struct.unpack_from("<H", rec, 0x14)[0]
+        pos = struct.unpack_from("<H", rec, 0x14)[0]    # +0x14: offset byte của attribute đầu tiên (sau mảng USA 2*(n+1) byte)
         while pos + 8 <= len(rec):
-            t, ln = struct.unpack_from("<II", rec, pos)
-            if t == 0xFFFFFFFF or ln == 0 or pos + ln > len(rec):
+            t, ln = struct.unpack_from("<II", rec, pos) # +0x00: mã loại attribute (4B), +0x04: tổng độ dài attribute (4B)
+            if t == 0xFFFFFFFF or ln == 0 or pos + ln > len(rec):  # 0xFFFFFFFF: dấu kết thúc danh sách attribute
                 break
             if t == ATTR_ATTRIBUTE_LIST and log is not None:
                 log.canh_bao("Phát hiện thuộc tính $ATTRIBUTE_LIST (0x20) - giới hạn đã biết chưa hỗ trợ bản ghi MFT phụ", offset=pos)
-            nonres, name_len = rec[pos + 8], rec[pos + 9]
+            nonres, name_len = rec[pos + 8], rec[pos + 9]  # +0x08: cờ non-resident (1B: 0=resident, 1=non-resident), +0x09: độ dài tên attribute (1B)
             a = {"type": t, "nonres": nonres, "name_len": name_len}
             if not nonres:
-                size, off = struct.unpack_from("<IH", rec, pos + 0x10)
+                size, off = struct.unpack_from("<IH", rec, pos + 0x10)  # Resident: +0x10 kích thước nội dung (4B), +0x14 offset nội dung (2B)
                 a["content"] = bytes(rec[pos + off:pos + off + size])
                 a["real"] = size
             else:
-                ro = struct.unpack_from("<H", rec, pos + 0x20)[0]
-                a["real"] = struct.unpack_from("<Q", rec, pos + 0x30)[0]
-                a["runs"] = runlist(rec[pos + ro:pos + ln])
+                ro = struct.unpack_from("<H", rec, pos + 0x20)[0]       # Non-resident: +0x20 offset bắt đầu chuỗi byte runlist (2B)
+                a["real"] = struct.unpack_from("<Q", rec, pos + 0x30)[0]  # Non-resident: +0x30 kích thước thực (real size) của dữ liệu (8B)
+                a["runs"] = runlist(rec[pos + ro:pos + ln])             # cắt từ pos + ro đến hết attribute để giải mã runlist
             yield a
-            pos += ln
+            pos += ln                                   # nhảy sang attribute kế tiếp theo độ dài ln
 
     # ---------- MFT ----------
     def _doc_mft0(self):
@@ -419,77 +420,77 @@ def chuan_doan_case1(img, log):
     """Tự động suy luận các tham số Boot Sector bị hỏng cho Scenario 1."""
     log.buoc("Bắt đầu chẩn đoán Boot Sector bị sai (Scenario 1)", offset=0x00)
 
-    bps = img.u16(0x0B)
+    bps = img.u16(0x0B)                                 # 0x0B: đọc bytes per sector (2B) từ Boot Sector
     if bps < 512 or bps > 4096 or (bps & (bps - 1)):
         log.canh_bao("bytes/sector bất thường, dùng 512", offset=0x0B, gia_tri=bps)
         bps = 512
 
-    tong_sector = img.u64(0x28)
-    sai_sec0_spc = img.u8(0x0D)
-    sai_sec0_lcn = img.u64(0x30)
-    sai_sec0_rec = img.u8(0x40)
+    tong_sector = img.u64(0x28)                         # 0x28: tổng số sector của volume (8B)
+    sai_sec0_spc = img.u8(0x0D)                         # 0x0D: sectors per cluster đang bị sai ở Sector 0 (1B)
+    sai_sec0_lcn = img.u64(0x30)                        # 0x30: $MFT LCN đang bị sai ở Sector 0 (8B)
+    sai_sec0_rec = img.u8(0x40)                         # 0x40: mã kích thước MFT record đang bị sai ở Sector 0 (1B)
     log.buoc("Sector 0 (Primary Boot): sectors/cluster đang sai", 0x0D, sai_sec0_spc)
     log.buoc("Sector 0 (Primary Boot): $MFT LCN đang sai", 0x30, sai_sec0_lcn)
     log.buoc("Sector 0 (Primary Boot): clusters/record đang sai", 0x40, sai_sec0_rec)
 
-    backup_offset = tong_sector * bps
+    backup_offset = tong_sector * bps                   # offset byte của Backup Boot Sector (sector cuối volume)
     if backup_offset + bps <= img.kich_thuoc:
         log.buoc("Sector cuối (Backup Boot): sectors/cluster đang sai",
-                 backup_offset + 0x0D, img.u8(backup_offset + 0x0D))
+                 backup_offset + 0x0D, img.u8(backup_offset + 0x0D))    # backup + 0x0D: spc ở Backup Boot (1B)
         log.buoc("Sector cuối (Backup Boot): $MFT LCN đang sai",
-                 backup_offset + 0x30, img.u64(backup_offset + 0x30))
+                 backup_offset + 0x30, img.u64(backup_offset + 0x30))   # backup + 0x30: $MFT LCN ở Backup Boot (8B)
         log.buoc("Sector cuối (Backup Boot): clusters/record đang sai",
-                 backup_offset + 0x40, img.u8(backup_offset + 0x40))
+                 backup_offset + 0x40, img.u8(backup_offset + 0x40))    # backup + 0x40: mã rec_size ở Backup Boot (1B)
 
     o = 0
     while True:
-        o = img.tim(b"FILE", o, None, bps)
+        o = img.tim(b"FILE", o, None, bps)              # +0x00: quét theo bước nhảy bps tìm chữ ký "FILE" (4B) của MFT record
         if o < 0:
             break
         if o + 0x42 > img.kich_thuoc:
             break
 
-        alloc_sz = img.u32(o + 0x1C)
+        alloc_sz = img.u32(o + 0x1C)                    # +0x1C: kích thước cấp phát (allocated size) của MFT record (4B, vd 1024)
         if (alloc_sz < bps or alloc_sz > 65536
                 or (alloc_sz & (alloc_sz - 1)) != 0
                 or o + alloc_sz > img.kich_thuoc):
             o += bps
             continue
 
-        rec = ap_dung_fixup(img.doc(o, alloc_sz), bps, log=None)
+        rec = ap_dung_fixup(img.doc(o, alloc_sz), bps, log=None)  # kiểm tra USN và khôi phục 2 byte cuối mỗi sector
         if rec is None:
             o += bps
             continue
 
         has_mft_name = False
         cand_runs = None
-        for a in NTFS.attrs(rec, log=None):
-            if a["type"] == ATTR_FN and not a["nonres"]:
+        for a in NTFS.attrs(rec, log=None):             # nhảy từ +0x14 (offset attribute đầu tiên) duyệt từng attribute
+            if a["type"] == ATTR_FN and not a["nonres"]:  # 0x30 ($FILE_NAME): đọc tên file tại +0x42 của nội dung attribute
                 k = parse_key(a["content"])
-                if k and k["name"] == "$MFT":
+                if k and k["name"] == "$MFT":           # khớp chính xác "$MFT" (loại "$MFTMirr" ở Record 1)
                     has_mft_name = True
-            elif a["type"] == ATTR_DATA and a["name_len"] == 0 and a["nonres"]:
-                cand_runs = a.get("runs")
+            elif a["type"] == ATTR_DATA and a["name_len"] == 0 and a["nonres"]:  # 0x80 ($DATA không tên, non-resident)
+                cand_runs = a.get("runs")               # lấy runlist đã giải mã từ offset +0x20 của header $DATA
 
         if not has_mft_name or not cand_runs:
             o += bps
             continue
 
-        cand_lcn = cand_runs[0][0]
+        cand_lcn = cand_runs[0][0]                      # LCN bắt đầu của run đầu tiên trong runlist $MFT
         if cand_lcn is None or cand_lcn <= 0 or o % cand_lcn != 0:
             o += bps
             continue
 
-        cand_cluster = o // cand_lcn
+        cand_cluster = o // cand_lcn                    # suy ra kích thước cluster = offset byte của Record 0 / mft_lcn
         if not (bps <= cand_cluster <= 65536
-                and (cand_cluster & (cand_cluster - 1)) == 0):
+                and (cand_cluster & (cand_cluster - 1)) == 0):  # phải là lũy thừa của 2 <= 64 KiB (loại bản sao trong $MFTMirr)
             o += bps
             continue
 
         mft_lcn = cand_lcn
         rec_size = alloc_sz
         cluster = cand_cluster
-        spc = cluster // bps
+        spc = cluster // bps                            # suy ra sectors per cluster = cluster_size / bytes_per_sector
         break
     else:
         raise RuntimeError("Không tìm thấy Bản ghi 0 của $MFT trên ảnh đĩa")
@@ -848,7 +849,7 @@ class BaiLam:
                         f"Vị trí Backup Boot Sector ({backup_offset:#x}) vượt quá kích thước ảnh ({ban_sua.kich_thuoc:#x})"
                     )
 
-                oem_backup = ban_sua.doc(backup_offset + 3, 8)
+                oem_backup = ban_sua.doc(backup_offset + 3, 8)  # backup + 0x03: OEM ID "NTFS    " (8B) tại Backup Boot Sector
                 if oem_backup != b"NTFS    ":
                     raise RuntimeError(
                         f"Sector cuối không phải Backup Boot Sector NTFS hợp lệ (OEM ID: {oem_backup!r})"
@@ -862,13 +863,13 @@ class BaiLam:
                 L.buoc("Backup Sector trước khi sửa: $MFT LCN", backup_offset + 0x30, ban_sua.u64(backup_offset + 0x30))
                 L.buoc("Backup Sector trước khi sửa: clusters/record", backup_offset + 0x40, ban_sua.u8(backup_offset + 0x40))
 
-                ban_sua.ghi_u8(0x0D, params["spc"])
-                ban_sua.ghi_u64(0x30, params["mft_lcn"])
-                ban_sua.ghi_u8(0x40, params["rec_size_byte"] & 0xFF)
+                ban_sua.ghi_u8(0x0D, params["spc"])                         # 0x0D: ghi lại sectors per cluster đúng (1B) ở Sector 0
+                ban_sua.ghi_u64(0x30, params["mft_lcn"])                    # 0x30: ghi lại $MFT LCN đúng (8B) ở Sector 0
+                ban_sua.ghi_u8(0x40, params["rec_size_byte"] & 0xFF)        # 0x40: ghi lại mã kích thước MFT record đúng (1B) ở Sector 0
 
-                ban_sua.ghi_u8(backup_offset + 0x0D, params["spc"])
-                ban_sua.ghi_u64(backup_offset + 0x30, params["mft_lcn"])
-                ban_sua.ghi_u8(backup_offset + 0x40, params["rec_size_byte"] & 0xFF)
+                ban_sua.ghi_u8(backup_offset + 0x0D, params["spc"])         # backup + 0x0D: ghi lại spc đúng (1B) ở Backup Boot
+                ban_sua.ghi_u64(backup_offset + 0x30, params["mft_lcn"])    # backup + 0x30: ghi lại $MFT LCN đúng (8B) ở Backup Boot
+                ban_sua.ghi_u8(backup_offset + 0x40, params["rec_size_byte"] & 0xFF)  # backup + 0x40: ghi lại mã rec_size đúng (1B) ở Backup Boot
             finally:
                 ban_sua.dong()
 
