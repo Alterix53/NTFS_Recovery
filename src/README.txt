@@ -36,8 +36,6 @@ Midterm/
 ├── Test Data/                              # Thư mục Kết quả, Nhật ký & Link ảnh đĩa
 │   ├── README.txt                          # Link Shared Drive chứa file .img & lệnh tái lập
 │   ├── logs/                               # Nhật ký thực thi (--log)
-│   │   ├── info_clean.json
-│   │   ├── info_clean.jsonl
 │   │   ├── case1_run.jsonl
 │   │   ├── case2_run.jsonl
 │   │   ├── case3_run.jsonl
@@ -63,8 +61,8 @@ Midterm/
 2. DANH SÁCH LỆNH CHẠY CHƯƠNG TRÌNH (Chạy từ thư mục gốc của dự án)
 --------------------------------------------------------------------------------
 
-[2.1] Đọc thông tin NTFS trên ảnh sạch (--info):
-python src/recover.py --image anh/clean.img --info --json --log "Test Data/logs/info_clean.jsonl" > "Test Data/logs/info_clean.json"
+[2.1] Đọc thông tin NTFS trên ảnh nguyên vẹn (--info):
+python src/recover.py --image anh/clean.img --info --json
 
 [2.2] Scenario 1: Khôi phục tập tin & sửa Boot Sector trên bản sao (--case 1 --repair):
 python src/recover.py --image anh/case1.img --case 1 --out "Test Data/recovered/case1" --repair anh/case1_repaired.img --log "Test Data/logs/case1_run.jsonl"
