@@ -4,11 +4,15 @@
 *.iso
 *.bin
 
-# Local image and scratch directories
+# Local image, test data, and scratch directories
 /anh/
 anh/
 /mau/
 mau/
+/Test Data/
+Test Data/
+/Test Data (up drive)/
+Test Data (up drive)/
 /anhReport/
 anhReport/
 /.codegraph/
@@ -18,8 +22,6 @@ ket_qua/
 src/ket_qua/
 /src/ket_qua/
 *.changes.json
-!Test Data/logs/*.changes.json
-!bonus/*.changes.json
 
 # Python cache and bytecode
 __pycache__/
@@ -27,10 +29,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Logs (allow logs inside Test Data/logs/)
+# Logs
 *.log
 *.jsonl
-!Test Data/logs/*.jsonl
 
 # Temporary and editor files
 .vscode/

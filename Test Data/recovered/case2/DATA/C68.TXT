@@ -1,5 +1,0 @@
-Thanh vien vang mat: khong.
-Noi dung: phan cong doc cau truc va viet chuong trinh.
-Han nop bao cao: cuoi tuan.
-Tai lieu tham khao: dac ta he thong tap tin.
-Ma kiem tra: 8103CCA1
