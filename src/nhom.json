@@ -1,15 +1,34 @@
 {
- "ma_nhom": "N00",
- "he_thong": "ntfs",
- "thanh_vien": [
-  {"mssv": "", "ho_ten": "", "phu_trach": ""}
- ],
- "cong_diem": {
-  "repair": [1],
-  "mo_rong": {
-    "tinh_huong": "ext-mbr",
-    "dac_ta": "mo_rong.json"
+  "ma_nhom": "qwertyqwertyqwerty",
+  "he_thong": "ntfs",
+  "thanh_vien": [
+    {
+      "mssv": "23127042",
+      "ho_ten": "NGUYỄN ĐẶNG MINH DUY",
+      "phu_trach": "Case 1 và repair()"
     },
- "_huong_dan": "repair: danh sách tình huống có cài --repair, vd [1, 2]. mo_rong: null hoặc {\"tinh_huong\": \"ext-root|ext-size|ext-mbr\", \"dac_ta\": \"mo_rong.json\"}"
-}
+    {
+      "mssv": "23127005",
+      "ho_ten": "NGUYỄN ANH KIỆT",
+      "phu_trach": "info() và Case 2"
+    },
+    {
+      "mssv": "",
+      "ho_ten": "NGUYỄN LÊ THIÊN LÝ",
+      "phu_trach": "Case 3"
+    },
+    {
+      "mssv": "23127536",
+      "ho_ten": "NGUYỄN TẤN PHƯỚC",
+      "phu_trach": "Bonus C: corrupt(), case_ext()"
+    }
+  ],
+  "cong_diem": {
+    "repair": [1],
+    "mo_rong": {
+      "tinh_huong": "ext-mbr",
+      "dac_ta": "mo_rong.json"
+    },
+    "_huong_dan": "repair: danh sách tình huống có cài --repair, vd [1, 2]. mo_rong: null hoặc {\"tinh_huong\": \"ext-root|ext-size|ext-mbr\", \"dac_ta\": \"mo_rong.json\"}"
+  }
 }
