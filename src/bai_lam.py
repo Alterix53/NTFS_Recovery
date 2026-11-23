@@ -241,6 +241,77 @@ def khop_magic(ten, head):
     return False
 
 
+def jpeg_hop_le(data):
+    """Kiểm tra cấu trúc JPEG và dữ liệu ảnh."""
+    if not data.startswith(b"\xff\xd8") or not data.endswith(b"\xff\xd9"):
+        return False
+
+    pos = 2
+    co_frame = co_scan = co_dqt = co_dht = False
+    while pos < len(data):
+        if data[pos] != 0xff:
+            return False
+        while pos < len(data) and data[pos] == 0xff:
+            pos += 1
+        if pos == len(data):
+            return False
+
+        marker = data[pos]
+        pos += 1
+        if marker == 0xd9:
+            return (pos == len(data) and co_frame and co_scan
+                    and co_dqt and co_dht)
+        if marker == 0xd8 or marker == 0x00 or 0xd0 <= marker <= 0xd7:
+            return False
+        if marker == 0x01:
+            continue
+
+        # Độ dài đoạn bao gồm cả hai byte lưu độ dài.
+        if pos + 2 > len(data):
+            return False
+        segment_size = int.from_bytes(data[pos:pos + 2], "big")
+        segment_end = pos + segment_size
+        if segment_size < 2 or segment_end > len(data):
+            return False
+
+        if marker in (0xc0, 0xc1, 0xc2):
+            co_frame = True
+        elif marker == 0xdb:
+            co_dqt = True
+        elif marker == 0xc4:
+            co_dht = True
+        elif not (0xe0 <= marker <= 0xef or marker in (
+                0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd,
+                0xce, 0xcf, 0xdd, 0xfe, 0xda)):
+            return False
+
+        if marker != 0xda:
+            pos = segment_end
+            continue
+
+        co_scan = True
+        pos = segment_end
+        # Sau SOS, FF00 là dữ liệu; D0-D7 là mã tiếp tục.
+        # Mã khác bắt đầu đoạn JPEG kế tiếp.
+        while pos < len(data):
+            if data[pos] != 0xff:
+                pos += 1
+                continue
+            next_marker_start = pos
+            next_pos = pos + 1
+            while next_pos < len(data) and data[next_pos] == 0xff:
+                next_pos += 1
+            if next_pos == len(data):
+                return False
+            next_marker = data[next_pos]
+            if next_marker == 0x00 or 0xd0 <= next_marker <= 0xd7:
+                pos = next_pos + 1
+                continue
+            pos = next_marker_start
+            break
+    return False
+
+
 def tim_volume_ntfs(img, log):
     """Tìm NTFS volume trong whole-disk image."""
 
@@ -710,7 +781,131 @@ class BaiLam:
         raise NotImplementedError("case1")
 
     def case3(self, img, out):
-        raise NotImplementedError("case3")
+        """Khôi phục 4 file nguyên vẹn rồi tìm mảnh còn thiếu của JPEG lớn."""
+        fs = NTFS(img, self.log)
+
+        # Tìm thư mục DATA trong thư mục gốc.
+        root = fs.doc_record(REC_ROOT)
+        data_ref = None
+        for record_ref, key, _ in fs.doc_thu_muc(root):
+            if key["name"].upper() == "DATA" and key["flags"] & FLAG_DIR_KEY:
+                data_ref = record_ref
+                break
+        if data_ref is None:
+            raise RuntimeError("Không tìm thấy thư mục DATA")
+
+        # Lấy tên và dữ liệu của từng file trong DATA.
+        files = []
+        for record_ref, key, _ in fs.doc_thu_muc(fs.doc_record(data_ref)):
+            if key["ns"] == 2 or key["name"] in ("", ".", ".."):
+                continue
+            if key["flags"] & FLAG_DIR_KEY:
+                continue
+
+            record = fs.doc_record(record_ref)
+            if record is None:
+                raise RuntimeError(f"Không đọc được MFT record {record_ref}")
+            _, data_attr = fs.thong_tin_record(record)
+            if data_attr is None:
+                raise RuntimeError(f"File {key['name']} không có $DATA")
+            files.append({"record": record_ref, "name": key["name"], "data": data_attr})
+
+        jpegs = [f for f in files if f["name"].lower().endswith((".jpg", ".jpeg"))]
+        if len(files) != 5 or len(jpegs) != 2:
+            raise RuntimeError("DATA phải có 5 file, trong đó có 2 JPEG")
+        target = max(jpegs, key=lambda f: f["data"]["real"])
+        intact_files = [f for f in files if f != target]
+
+        # Đánh dấu các cụm đã dùng để tránh ghi đè dữ liệu file khác.
+        bitmap_record = fs.doc_record(6)
+        _, bitmap_attr = fs.thong_tin_record(bitmap_record)
+        if bitmap_attr is None:
+            raise RuntimeError("Không đọc được $Bitmap")
+        bitmap = fs.doc_data_attr(bitmap_attr)
+        volume_clusters = fs.tong_sector // fs.spc
+        used_clusters = set()
+        for cluster in range(min(volume_clusters, len(bitmap) * 8)):
+            if bitmap[cluster // 8] & (1 << (cluster % 8)):
+                used_clusters.add(cluster)
+
+        # Khôi phục các file nguyên vẹn và giữ chỗ cho cụm của chúng.
+        for file_info in intact_files:
+            data_attr = file_info["data"]
+            for start_lcn, length in data_attr.get("runs", []):
+                if start_lcn is not None:
+                    used_clusters.update(range(start_lcn, start_lcn + length))
+            content = fs.doc_data_attr(data_attr)
+            path = f"DATA/{file_info['name']}"
+            out.luu(path, content)
+            self.log.buoc("Khôi phục file nguyên vẹn", fs.offset_record(file_info["record"]),
+                          {"path": path, "size": len(content)})
+
+        # MFT còn giữ cụm đầu tiên và kích thước gốc của JPEG.
+        jpeg_attr = target["data"]
+        if not jpeg_attr["nonres"] or not jpeg_attr.get("runs"):
+            raise RuntimeError("JPEG mục tiêu không có runlist hợp lệ")
+        first_lcn = jpeg_attr["runs"][0][0]
+        if first_lcn is None:
+            raise RuntimeError("Run đầu tiên của JPEG là sparse")
+
+        file_size = jpeg_attr["real"]
+        cluster_size = fs.cluster
+        needed_clusters = (file_size + cluster_size - 1) // cluster_size
+        end_in_cluster = file_size % cluster_size or cluster_size
+        used_clusters.discard(first_lcn)
+        self.log.buoc("Thông tin JPEG cần ghép", fs.offset_record(target["record"]),
+                      {"name": target["name"], "first_LCN": first_lcn,
+                       "size": file_size, "clusters": needed_clusters})
+
+        def read_clusters(start_lcn, count):
+            offset = start_lcn * cluster_size
+            return fs.img.doc(offset, count * cluster_size)
+
+        result = None
+        for first_length in range(1, needed_clusters):
+            # Kiểm tra mảnh đầu không đè lên file khác.
+            first_fragment = range(first_lcn, first_lcn + first_length)
+            if any(cluster in used_clusters for cluster in first_fragment):
+                continue
+
+            second_length = needed_clusters - first_length
+            first_possible_lcn2 = first_lcn + first_length + 1
+            last_possible_lcn2 = min(
+                first_lcn + first_length + 64,
+                volume_clusters - second_length,
+            )
+            for second_lcn in range(first_possible_lcn2, last_possible_lcn2 + 1):
+                self.log.buoc("Thử vị trí mảnh 2", gia_tri={
+                    "L1": first_length, "LCN_2": second_lcn, "L2": second_length,
+                })
+                second_fragment = range(second_lcn, second_lcn + second_length)
+                if any(cluster in used_clusters for cluster in second_fragment):
+                    continue
+
+                # Kiểm tra dấu kết thúc JPEG trước khi ghép dữ liệu.
+                last_cluster = read_clusters(second_lcn + second_length - 1, 1)
+                if last_cluster[end_in_cluster - 2:end_in_cluster] != b"\xff\xd9":
+                    continue
+
+                content = (read_clusters(first_lcn, first_length)
+                           + read_clusters(second_lcn, second_length))[:file_size]
+                if not jpeg_hop_le(content):
+                    continue
+                result = (first_length, second_lcn, second_length, content)
+                break
+            if result is not None:
+                break
+
+        if result is None:
+            raise RuntimeError("Không tìm thấy vị trí fragment 2 phù hợp")
+
+        first_length, second_lcn, second_length, content = result
+        path = f"DATA/{target['name']}"
+        out.luu(path, content)
+        self.log.quyet_dinh("Đã ghép lại JPEG", path=path,
+                            runlist=[(first_lcn, first_length),
+                                     (second_lcn, second_length)],
+                            size=len(content))
 
     
 
