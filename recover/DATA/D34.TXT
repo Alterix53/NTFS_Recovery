@@ -1,0 +1,7 @@
+Ghi chu: kiem tra lai offset truoc khi sua anh.
+Han nop bao cao: cuoi tuan.
+Noi dung: phan cong doc cau truc va viet chuong trinh.
+Thanh vien vang mat: khong.
+Bien ban hop nhom do an phuc hoi du lieu.
+Tai lieu tham khao: dac ta he thong tap tin.
+Ma kiem tra: 55F24F73
