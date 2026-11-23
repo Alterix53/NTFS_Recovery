@@ -1,8 +1,9 @@
-# Disk images and dumps
+# Disk images, archives, and dumps
 *.img
 *.vhd
 *.iso
 *.bin
+*.zip
 
 # Local image, test data, and scratch directories
 /anh/
