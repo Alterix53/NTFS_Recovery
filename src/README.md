@@ -18,36 +18,38 @@ Chương trình được xây dựng trên skeleton của giảng viên, hỗ tr
 
 ## 2. Hướng dẫn chạy chương trình
 
-Chuyển vào thư mục `src`:
+Từ thư mục gốc của dự án (với các ảnh đĩa đặt trong thư mục `anh/`):
 
-```bash
-cd src
+Đọc thông tin NTFS (`--info`):
+
+```powershell
+python src/recover.py --image anh/clean.img --info --json --log "Test Data/logs/info_clean.jsonl" > "Test Data/logs/info_clean.json"
 ```
 
-Đọc thông tin NTFS:
+Khôi phục 3 tình huống chính (`--case 1, 2, 3`) và sửa Boot Sector cho Case 1 (`--repair`):
 
-```bash
-python recover.py --image clean.img --info --json
+```powershell
+# Case 1 (kèm --repair tạo bản sao đã sửa Boot Sector)
+python src/recover.py --image anh/case1.img --case 1 --out "Test Data/recovered/case1" --repair anh/case1_repaired.img --log "Test Data/logs/case1_run.jsonl"
+
+# Kiểm chứng lại ảnh đã sửa của Case 1 bằng --info
+python src/recover.py --image anh/case1_repaired.img --info --json
+
+# Case 2
+python src/recover.py --image anh/case2.img --case 2 --out "Test Data/recovered/case2" --log "Test Data/logs/case2_run.jsonl"
+
+# Case 3
+python src/recover.py --image anh/case3.img --case 3 --out "Test Data/recovered/case3" --log "Test Data/logs/case3_run.jsonl"
 ```
 
-Khôi phục các tình huống chính:
-
-```bash
-python recover.py --image case1.img --case 1 --out recovered/
-python recover.py --image case2.img --case 2 --out recovered/
-python recover.py --image case3.img --case 3 --out recovered/
-```
-
-Ghi nhật ký bằng tham số `--log` khi cần.
-
-Kết quả được lưu bằng `out.luu()` với đúng tên và đường dẫn gốc. Chương trình không sửa trực tiếp ảnh đầu vào.
+Kết quả được lưu bằng `out.luu()` kèm tệp `SHA256SUMS` với đúng tên và đường dẫn gốc. Chương trình không sửa trực tiếp ảnh đầu vào.
 
 ## 3. Kiểm thử
 
-Sử dụng bộ dữ liệu mẫu NTFS của giảng viên:
+Sử dụng bộ dữ liệu mẫu NTFS (nếu thư mục `anh/` chứa thêm các tệp đáp án `.json` của giảng viên):
 
-```bash
-python selftest.py --mau /duong_dan_den/mau/ntfs
+```powershell
+python src/selftest.py --mau anh
 ```
 
 Chương trình kiểm tra thông tin hệ thống tập tin, nội dung và đường dẫn khôi phục của từng tình huống dựa trên đáp án mẫu.
@@ -56,17 +58,17 @@ Các thuật toán không cố định offset, số cluster hay thông tin riên
 
 ## 4. Bonus C — Lost MBR Partition Table Entry
 
-Nhóm lựa chọn tình huống mở rộng `ext-mbr` trên hệ thống NTFS.
+Nhóm lựa chọn tình huống mở rộng `ext-mbr` trên hệ thống NTFS (kết hợp với `--repair` cho Scenario 1).
 
 **Mô tả:** Mục phân vùng đầu tiên trong bảng MBR bị xóa tại offset `0x1BE` (16 byte). Chương trình phải tìm lại NTFS volume và khôi phục dữ liệu.
 
 ### 4.1. Cấu hình
 
-Trong `nhom.json`:
+Trong `src/nhom.json`:
 
 ```json
 "cong_diem": {
-  "repair": [],
+  "repair": [1],
   "mo_rong": {
     "tinh_huong": "ext-mbr",
     "dac_ta": "mo_rong.json"
@@ -74,7 +76,7 @@ Trong `nhom.json`:
 }
 ```
 
-File `mo_rong.json`:
+File `src/mo_rong.json`:
 
 ```json
 {
@@ -87,24 +89,24 @@ File `mo_rong.json`:
 
 Sử dụng **whole-disk image có MBR**, không phải NTFS volume image:
 
-```bash
-python recover.py \
-  --image clean-whole-disk.img \
-  --corrupt mo_rong.json \
-  --out damaged.img \
-  --log bonus_corrupt.jsonl
+```powershell
+python src/recover.py `
+  --image anh/clean-whole-disk.img `
+  --corrupt src/mo_rong.json `
+  --out anh/damaged.img `
+  --log "Test Data/logs/bonus_corrupt.jsonl"
 ```
 
-Hàm `corrupt()` tạo ảnh sao chép và xóa 16 byte của MBR Partition Entry 0, đồng thời trả về vùng đã thay đổi để chương trình tạo file `damaged.img.changes.json`.
+Hàm `corrupt()` tạo ảnh sao chép và xóa 16 byte của MBR Partition Entry 0, đồng thời trả về vùng đã thay đổi để chương trình tạo file `anh/damaged.img.changes.json`.
 
 ### 4.3. Khôi phục
 
-```bash
-python recover.py \
-  --image damaged.img \
-  --case ext \
-  --out recovered/ \
-  --log bonus_recovery.jsonl
+```powershell
+python src/recover.py `
+  --image anh/damaged.img `
+  --case ext `
+  --out "Test Data/recovered/case_ext" `
+  --log "Test Data/logs/bonus_recovery.jsonl"
 ```
 
 Hàm `case_ext()` tìm NTFS Boot Sector, xác thực MFT, xác định vị trí volume và khôi phục các tập tin trong thư mục `DATA`.
