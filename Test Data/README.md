@@ -55,22 +55,22 @@ Test Data/
 
 ## 3. Lệnh Tái lập Kết quả (Reproducibility Commands)
 
-Từ thư mục gốc của dự án, chạy các lệnh sau (thay đường dẫn file `.img` bằng thư mục tải về từ Shared Drive):
+Toàn bộ các file ảnh đĩa trên máy cục bộ được gom thống nhất trong thư mục `anh/` (tương ứng với thư mục tải về từ Shared Drive). Từ thư mục gốc của dự án, chạy các lệnh sau:
 
 ```powershell
 # 1. Đọc thông tin hệ thống tập tin trên ảnh sạch
-python src/recover.py --image clean.img --info --json --log "Test Data/logs/info_clean.jsonl" > "Test Data/logs/info_clean.json"
+python src/recover.py --image anh/clean.img --info --json --log "Test Data/logs/info_clean.jsonl" > "Test Data/logs/info_clean.json"
 
 # 2. Scenario 1: Khôi phục tập tin & sửa Boot Sector trên bản sao
-python src/recover.py --image case1.img --case 1 --out "Test Data/recovered/case1" --repair case1_repaired.img --log "Test Data/logs/case1_run.jsonl"
+python src/recover.py --image anh/case1.img --case 1 --out "Test Data/recovered/case1" --repair anh/case1_repaired.img --log "Test Data/logs/case1_run.jsonl"
 
 # 3. Scenario 2: Khôi phục tập tin từ các Orphan MFT Records
-python src/recover.py --image case2.img --case 2 --out "Test Data/recovered/case2" --log "Test Data/logs/case2_run.jsonl"
+python src/recover.py --image anh/case2.img --case 2 --out "Test Data/recovered/case2" --log "Test Data/logs/case2_run.jsonl"
 
 # 4. Scenario 3: Khôi phục tập tin JPEG bị phân mảnh
-python src/recover.py --image case3.img --case 3 --out "Test Data/recovered/case3" --log "Test Data/logs/case3_run.jsonl"
+python src/recover.py --image anh/case3.img --case 3 --out "Test Data/recovered/case3" --log "Test Data/logs/case3_run.jsonl"
 
 # 5. Bonus C: Gây lỗi xóa MBR Partition Entry 0 (0x1BE) và khôi phục
-python src/recover.py --image clean-whole-disk.img --corrupt src/mo_rong.json --out bonus/damaged.img --log "Test Data/logs/bonus_corrupt.jsonl"
-python src/recover.py --image bonus/damaged.img --case ext --out "Test Data/recovered/case_ext" --log "Test Data/logs/bonus_recovery.jsonl"
+python src/recover.py --image anh/clean-whole-disk.img --corrupt src/mo_rong.json --out anh/damaged.img --log "Test Data/logs/bonus_corrupt.jsonl"
+python src/recover.py --image anh/damaged.img --case ext --out "Test Data/recovered/case_ext" --log "Test Data/logs/bonus_recovery.jsonl"
 ```
