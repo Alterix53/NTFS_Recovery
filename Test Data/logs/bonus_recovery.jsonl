@@ -1,0 +1,15 @@
+{"t": 0.0, "loai": "buoc", "msg": "Bonus C: Bắt đầu phục hồi", "offset": "0x1be", "gia_tri": "Lost MBR partition entry 0"}
+{"t": 0.001, "loai": "buoc", "msg": "bytes/sector", "offset": "0xb", "gia_tri": 512}
+{"t": 0.002, "loai": "buoc", "msg": "sectors/cluster", "offset": "0xd", "gia_tri": 8}
+{"t": 0.002, "loai": "buoc", "msg": "$MFT LCN", "offset": "0x30", "gia_tri": 4}
+{"t": 0.002, "loai": "buoc", "msg": "kích thước MFT record (byte)", "offset": "0x40", "gia_tri": 1024}
+{"t": 0.002, "loai": "buoc", "msg": "runlist của $MFT", "offset": "0x4000", "gia_tri": [[4, 19]]}
+{"t": 0.002, "loai": "buoc", "msg": "Tìm thấy ứng viên NTFS hợp lệ", "offset": "0x100000", "gia_tri": {"cluster_size": 4096, "mft_record_size": 1024}}
+{"t": 0.049, "loai": "quyet_dinh", "msg": "Chọn NTFS volume", "offset": "0x100000", "gia_tri": {"start_lba": 2048}}
+{"t": 0.049, "loai": "buoc", "msg": "Đã tìm thấy thư mục DATA", "offset": "0x100000", "gia_tri": {"mft_record": 64, "directory_name": "DATA"}}
+{"t": 0.05, "loai": "buoc", "msg": "Khôi phục file", "offset": "0x100000", "gia_tri": {"path": "DATA/document.pdf", "mft_record": 66, "size": 0}}
+{"t": 0.051, "loai": "buoc", "msg": "Khôi phục file", "offset": "0x100000", "gia_tri": {"path": "DATA/image.png", "mft_record": 67, "size": 0}}
+{"t": 0.052, "loai": "buoc", "msg": "Khôi phục file", "offset": "0x100000", "gia_tri": {"path": "DATA/note.txt", "mft_record": 65, "size": 27}}
+{"t": 0.052, "loai": "buoc", "msg": "Khôi phục file", "offset": "0x100000", "gia_tri": {"path": "DATA/photo1.jpg", "mft_record": 68, "size": 0}}
+{"t": 0.053, "loai": "buoc", "msg": "Khôi phục file", "offset": "0x100000", "gia_tri": {"path": "DATA/photo2.jpg", "mft_record": 69, "size": 0}}
+{"t": 0.053, "loai": "quyet_dinh", "msg": "Bonus C: Hoàn thành", "gia_tri": {"so_file": 5, "volume_offset": 1048576, "cluster_size": 4096, "mft_record_size": 1024}}

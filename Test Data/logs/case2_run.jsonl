@@ -1,0 +1,18 @@
+{"t": 0.0, "loai": "buoc", "msg": "bytes/sector", "offset": "0xb", "gia_tri": 512}
+{"t": 0.0, "loai": "buoc", "msg": "sectors/cluster", "offset": "0xd", "gia_tri": 8}
+{"t": 0.001, "loai": "buoc", "msg": "$MFT LCN", "offset": "0x30", "gia_tri": 4}
+{"t": 0.001, "loai": "buoc", "msg": "kích thước MFT record (byte)", "offset": "0x40", "gia_tri": 1024}
+{"t": 0.001, "loai": "buoc", "msg": "runlist của $MFT", "offset": "0x4000", "gia_tri": [[4, 19]]}
+{"t": 0.001, "loai": "buoc", "msg": "Thư mục DATA: số MFT record", "offset": "0x14000", "gia_tri": 64}
+{"t": 0.001, "loai": "buoc", "msg": "Số index entry trong DATA", "gia_tri": 5}
+{"t": 0.002, "loai": "buoc", "msg": "Entry 'C38.PNG': ref=66 -> TỐT", "offset": "0x14800", "gia_tri": 256288}
+{"t": 0.043, "loai": "buoc", "msg": "Entry 'C68.TXT': ref=0 -> HỎNG", "offset": "0x4000", "gia_tri": 178}
+{"t": 0.043, "loai": "buoc", "msg": "Entry 'O16.PDF': ref=0 -> HỎNG", "offset": "0x4000", "gia_tri": 132020}
+{"t": 0.043, "loai": "buoc", "msg": "Entry 'R69.JPG': ref=0 -> HỎNG", "offset": "0x4000", "gia_tri": 84792}
+{"t": 0.043, "loai": "buoc", "msg": "Entry 'X22.JPG': ref=69 -> TỐT", "offset": "0x15400", "gia_tri": 488486}
+{"t": 0.043, "loai": "buoc", "msg": "Orphan: record 65, real size $DATA", "offset": "0x14400", "gia_tri": 84792}
+{"t": 0.044, "loai": "buoc", "msg": "Orphan: record 67, real size $DATA", "offset": "0x14c00", "gia_tri": 132020}
+{"t": 0.044, "loai": "buoc", "msg": "Orphan: record 68, real size $DATA", "offset": "0x15000", "gia_tri": 178}
+{"t": 0.044, "loai": "quyet_dinh", "msg": "Ghép 'C68.TXT' với MFT record 68", "diem": 135, "tieu_chi": ["real size", "độ dài tên", "allocated size", "magic/đuôi tên"]}
+{"t": 0.044, "loai": "quyet_dinh", "msg": "Ghép 'O16.PDF' với MFT record 67", "diem": 135, "tieu_chi": ["real size", "độ dài tên", "allocated size", "magic/đuôi tên"]}
+{"t": 0.045, "loai": "quyet_dinh", "msg": "Ghép 'R69.JPG' với MFT record 65", "diem": 135, "tieu_chi": ["real size", "độ dài tên", "allocated size", "magic/đuôi tên"]}

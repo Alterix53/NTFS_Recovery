@@ -1,0 +1,4 @@
+Ghi chu: kiem tra lai offset truoc khi sua anh.
+Han nop bao cao: cuoi tuan.
+Tai lieu tham khao: dac ta he thong tap tin.
+Ma kiem tra: FCDD2FA5
