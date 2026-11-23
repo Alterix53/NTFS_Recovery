@@ -1,0 +1,173 @@
+\chapter{Scenario 1: Sai tham số Boot Sector (NTFS)}
+
+Chương này trình bày cách chẩn đoán và phục hồi ảnh NTFS có ba tham số Boot Sector bị sửa sai ở cả sector khởi động chính và bản sao dự phòng. Thay vì ghi đè trực tiếp lên ảnh gốc, chương trình suy luận tham số từ bản ghi số 0 của \texttt{\$MFT}, trích xuất dữ liệu bằng các tham số suy luận, rồi tùy chọn sửa Boot Sector trên một bản sao để kiểm chứng.
+
+%====================================================================
+\section{Chẩn đoán hư hỏng}
+%====================================================================
+
+\subsection{Mô tả}
+
+Ba trường mô tả bố cục NTFS bị thay đổi giống nhau ở Sector 0 và Backup Boot Sector. Các giá trị bị sửa (\texttt{spc=1}, \texttt{mft\_lcn=2}, byte \texttt{0x40=+2}) vẫn hợp lệ về mặt hình thức (\textit{formally valid}): đều là lũy thừa của 2 hoặc LCN dương nằm trong giới hạn volume, nên trình phân tích thông thường không thể phát hiện lỗi cú pháp ở Boot Sector mà chỉ thất bại khi tìm chữ ký \texttt{FILE} tại offset suy ra $\texttt{2} \times 512 = \texttt{0x400}$.
+
+\begin{center}
+\begin{tabular}{|p{2.2cm}|p{5.2cm}|p{6.3cm}|}
+\hline
+ & \textbf{Bị sai} & \textbf{Còn nguyên / hệ quả} \\ \hline
+Boot Sector & \texttt{0x0D}, \texttt{0x30}, \texttt{0x40} bị sửa ở Sector 0 và Backup Boot & \texttt{bps} tại \texttt{0x0B} và \texttt{total\_sectors} tại \texttt{0x28} còn nguyên, cho phép tính chính xác vị trí Backup Boot. \\ \hline
+Diễn giải & \texttt{spc=1}, \texttt{mft\_lcn=2}, byte \texttt{0x40=+2} & Nếu tin các giá trị này, cluster chỉ có 512 B, vị trí \texttt{\$MFT} tính ra là \texttt{0x400} (không có chữ ký \texttt{FILE}); kích thước record bị diễn giải thành 2 cluster. \\ \hline
+Phục hồi & Không dùng trực tiếp các tham số sai để dựng hệ tệp & Record 0 tại \texttt{0x4000} và runlist của \texttt{\$MFT} cung cấp dữ liệu độc lập để suy luận lại. \\ \hline
+\end{tabular}
+\end{center}
+
+\begin{center}
+\begin{tabular}{|p{3.3cm}|p{3.1cm}|p{3.4cm}|p{3.9cm}|}
+\hline
+\textbf{Trường} & \textbf{Offset Sector 0} & \textbf{Offset Backup Boot} & \textbf{Sai $\rightarrow$ đúng} \\ \hline
+Sectors per cluster & \texttt{0x0D} & \texttt{0x1FFFFE0D} & \texttt{0x01} (1) $\rightarrow$ \texttt{0x08} (8) \\ \hline
+\texttt{\$MFT} starting cluster (LCN) & \texttt{0x30} & \texttt{0x1FFFFE30} & \texttt{02 00 ... 00} (2) $\rightarrow$ \texttt{04 00 ... 00} (4) \\ \hline
+Clusters per MFT record & \texttt{0x40} & \texttt{0x1FFFFE40} & \texttt{0x02} (+2) $\rightarrow$ \texttt{0xF6} ($-10$) \\ \hline
+\end{tabular}
+\end{center}
+
+Với \texttt{bps=512} và \texttt{total\_sectors=1{,}048{,}575}, Backup Boot bắt đầu tại $1{,}048{,}575 \times 512 = 536{,}870{,}400 = \texttt{0x1FFFFE00}$. OEM ID \texttt{"NTFS\ \ \ \ "} xuất hiện tại offset \texttt{0x1FFFFE03}, giúp xác nhận vị trí trước khi sửa.
+
+\subsection{Bằng chứng hex}
+
+Ba vùng byte trọng yếu trên ảnh \texttt{case1.img} gồm Sector 0 (\texttt{0x00}), Backup Boot Sector (\texttt{0x1FFFFE00}) và Bản ghi 0 của \texttt{\$MFT} (\texttt{0x4000}):
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.95\textwidth]{img/0x00-0x4f.png}
+\caption{Hexdump Sector 0 (\texttt{0x00--0x4F}) của \texttt{case1.img}: \texttt{0x0B} = \texttt{00 02} (512 B); \texttt{0x0D} = \texttt{01}; \texttt{0x28} = \texttt{FF FF 0F 00 00 00 00 00}; \texttt{0x30} = LCN 2; \texttt{0x40} = \texttt{02}.}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.95\textwidth]{img/boot-duphong.png}
+\caption{Hexdump Backup Boot Sector tại \texttt{0x1FFFFE00}: OEM ID \texttt{"NTFS\ \ \ \ "} ở \texttt{+0x03}; các trường sai đồng nhất ở \texttt{+0x0D} (\texttt{01}), \texttt{+0x30} (LCN 2) và \texttt{+0x40} (\texttt{02}).}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.95\textwidth]{img/MFT.png}
+\caption{Hexdump MFT Record 0 tại \texttt{0x4000}: \texttt{0x4000} = \texttt{FILE}; \texttt{0x401C} = \texttt{00 04 00 00}; \texttt{0x4098} = \texttt{\$FILE\_NAME} (\texttt{"\$MFT"} tại \texttt{0x40F2--0x40F9}); \texttt{0x4100} = \texttt{\$DATA} (runlist \texttt{11 13 04 00} tại \texttt{0x4140}).}
+\end{figure}
+
+Trong Record 0 (\texttt{0x4000}), trường allocated size tại \texttt{0x401C} có giá trị \texttt{00 04 00 00} = 1024 byte. Attribute \texttt{\$FILE\_NAME} (\texttt{0x4098}) có độ dài tên \texttt{0x04} (\texttt{0x40F0}) và chuỗi UTF-16LE \texttt{24 00 4D 00 46 00 54 00} (\texttt{"\$MFT"}) tại \texttt{0x40F2--0x40F9}. Attribute \texttt{\$DATA} không tên (\texttt{0x4100}) chứa runlist \texttt{11 13 04 00} tại \texttt{0x4140}: byte header \texttt{0x11} chỉ 1 byte độ dài (\texttt{0x13} = 19 cluster) và 1 byte offset LCN (\texttt{0x04} = 4).
+
+%====================================================================
+\section{Cơ sở lý thuyết}
+%====================================================================
+
+\subsection{Suy luận tham số từ bản ghi \texttt{\$MFT} số 0}
+
+Để định vị Record 0 mà không phụ thuộc Boot Sector, chương trình quét ảnh đĩa theo bước nhảy \texttt{bps} bằng \texttt{img.tim(b"FILE", o, None, bps)}. Tại mỗi vị trí có chữ ký \texttt{FILE}, kích thước cấp phát \texttt{rec\_size} được đọc từ \texttt{+0x1C} (phải là lũy thừa của 2 trong $[\texttt{bps},\ 64\text{ KiB}]$), sau đó kiểm tra và hoàn nguyên cuối mỗi sector bằng \texttt{ap\_dung\_fixup}. Bước Fixup (USA) này vừa khôi phục 2 byte cuối sector trước khi đọc attribute, vừa loại bỏ ngay các chuỗi \texttt{"FILE"} ngẫu nhiên trong vùng dữ liệu. Ứng viên được xác nhận là Record 0 khi có \texttt{\$FILE\_NAME} khớp chính xác với \texttt{"\$MFT"} và \texttt{\$DATA} không tên chứa runlist hợp lệ (cách giải mã attribute và runlist dẫn chiếu Chương 1).
+
+Từ offset tìm được $\texttt{mft\_offset} = \texttt{0x4000}$, kích thước bản ghi $\texttt{rec\_size} = 1024$ byte và cluster bắt đầu $\texttt{mft\_lcn} = 4$ lấy từ run đầu tiên của \texttt{\$DATA}, các tham số hình học được suy ra trực tiếp:
+\[
+\texttt{cluster\_size} = \frac{\texttt{mft\_offset}}{\texttt{mft\_lcn}}
+= \frac{\texttt{0x4000}}{4} = 4096\ \text{byte}
+\]
+\[
+\texttt{spc} = \frac{\texttt{cluster\_size}}{\texttt{bps}} = \frac{4096}{512} = 8.
+\]
+Giá trị \texttt{cluster\_size} = 4096 byte thỏa mãn điều kiện lũy thừa của 2 trong $[512\text{ B},\ 64\text{ KiB}]$.
+
+\subsection{Loại trừ bản sao \texttt{\$MFTMirr} và nhận diện nhầm}
+
+Chỉ tìm chuỗi con UTF-16 \texttt{\$MFT} sẽ nhận nhầm \texttt{\$MFTMirr}. Do đó thuật toán so khớp toàn bộ tên trong \texttt{\$FILE\_NAME} với \texttt{"\$MFT"}, giúp loại ngay Record 1 tại \texttt{0x4400} (tên \texttt{"\$MFTMirr"}). Riêng bản sao của Record 0 nằm trong vùng \texttt{\$MFTMirr} tại \texttt{0x0FFFF000} có tên \texttt{"\$MFT"} và runlist \texttt{mft\_lcn = 4} giống hệt bản gốc; tuy $\texttt{0x0FFFF000}$ chia hết cho 4, thương số $\texttt{0x0FFFF000} / 4 = \texttt{0x3FFFC00} = 67{,}107{,}840$ byte không phải lũy thừa của 2 và vượt ngưỡng 64 KiB nên bị loại chính xác.
+
+\subsection{Mã hóa kích thước MFT record tại byte \texttt{0x40}}
+
+Byte \texttt{0x40} lưu số nguyên có dấu 8 bit được tính bởi \texttt{ma\_hoa\_0x40(rec\_size, cluster)}: nếu $\texttt{rec\_size} \ge \texttt{cluster}$ thì lưu số dương $\texttt{rec\_size} \mathbin{//} \texttt{cluster}$; nếu $\texttt{rec\_size} < \texttt{cluster}$ thì lưu $-\log_2(\texttt{rec\_size})$ dưới dạng bù hai 1 byte. Với $\texttt{rec\_size} = 1024 < 4096$, giá trị mã hóa là $-10$ (\texttt{0xF6}), khớp với công thức giải mã $2^{10} = 1024$ byte trong \texttt{\_doc\_boot}.
+
+%====================================================================
+\section{Thuật toán phục hồi và sửa ảnh}
+%====================================================================
+
+\subsection{Thiết kế chức năng trích xuất và sửa ảnh}
+
+Quá trình xử lý được tách thành ba hàm trong \texttt{src/bai\_lam.py}:
+\begin{itemize}
+    \item \textbf{Chẩn đoán (\texttt{chuan\_doan\_case1}):} ghi nhận các giá trị sai ở Sector 0 và Backup Boot, sau đó quét tìm Record 0 theo biên sector (\texttt{step = bps}). Nhờ nhảy theo sector và kiểm tra điều kiện sớm, việc quét trên ảnh 512 MB hoàn tất trong dưới 0.01 giây và tìm thấy ngay Record 0 ở sector 32 (\texttt{0x4000}).
+    \item \textbf{Trích xuất không sửa ảnh gốc (\texttt{BaiLam.case1}):} truyền tham số suy luận vào \texttt{NTFS(img, log, override\_boot=boot\_params)} để dựng hệ tệp trong bộ nhớ, rồi tái sử dụng \texttt{BaiLam.\_duyet} từ Record 5 và \texttt{doc\_data\_attr} (Chương 1) để trích xuất tập tin qua \texttt{out.luu}.
+    \item \textbf{Sửa ảnh trên bản sao (\texttt{BaiLam.repair}):} tạo bản sao qua \texttt{img.sao\_chep(anh\_moi)}, kiểm tra giới hạn ảnh và chữ ký OEM ID \texttt{"NTFS\ \ \ \ "} tại $\texttt{backup\_offset} = \texttt{total\_sectors} \times \texttt{bps}$ trước khi ghi đè ba trường \texttt{0x0D}, \texttt{0x30}, \texttt{0x40} ở cả hai đầu volume. Sau khi đóng tệp, hàm mở lại ảnh mới qua \texttt{NTFS(img\_moi, log)} \textit{không dùng} \texttt{override\_boot} và duyệt cây thư mục để tự kiểm chứng.
+\end{itemize}
+
+\subsection{Pseudocode}
+
+\begin{verbatim}
+chuan_doan_case1(img, log):
+    bps <- u16(0x0B); nếu bps không hợp lệ: fallback 512, cảnh báo
+    tong_sector <- u64(0x28); backup <- tong_sector * bps
+    log giá trị đang sai ở 0x0D, 0x30, 0x40 của Sector 0 và backup
+    o <- 0
+    while (o <- img.tim(b"FILE", o, None, bps)) >= 0:
+        alloc_sz <- u32(o + 0x1C)
+        nếu alloc_sz không là lũy thừa 2 trong [bps, 64 KiB]: o += bps; tiếp
+        rec <- ap_dung_fixup(doc(o, alloc_sz), bps)
+        nếu rec = None hoặc $FILE_NAME != "$MFT": o += bps; tiếp
+        mft_lcn <- LCN đầu của runlist $DATA không tên
+        nếu mft_lcn <= 0 hoặc o % mft_lcn != 0: o += bps; tiếp
+        cluster <- o / mft_lcn
+        nếu cluster không là lũy thừa 2 trong [bps, 64 KiB]: o += bps; tiếp
+        nếu Record 5 ($Root) theo runlist không đọc được hoặc không là thư mục:
+            o += bps; tiếp
+        spc <- cluster / bps
+        rec_size_byte <- ma_hoa_0x40(alloc_sz, cluster)
+        trả về {bps, spc, cluster, mft_lcn, rec_size=alloc_sz,
+                rec_size_byte, tong_sector}
+
+case1(img, out):
+    p <- chuan_doan_case1(img, log)
+    fs <- NTFS(img, log, override_boot=p)        # không sửa ảnh gốc
+    files <- []; _duyet(fs, 5, "", files, {}, 0)
+    for f in files:
+        đọc $DATA của f.ref bằng doc_data_attr; out.luu(f.path, data)
+
+repair(img, case, anh_moi):
+    p <- chuan_doan_case1(img, log)
+    backup <- p.tong_sector * p.bps
+    ban_sua <- img.sao_chep(anh_moi)
+    nếu backup + p.bps > kich_thuoc hoặc OEM ID tại backup+3 != "NTFS    ":
+        đóng ban_sua; báo lỗi và dừng
+    log giá trị cũ; ghi spc, mft_lcn, rec_size_byte & 0xFF
+        vào 0x0D, 0x30, 0x40 ở cả Sector 0 và backup
+    ban_sua.dong()
+    mở lại img_moi <- AnhDia(anh_moi)
+    fs <- NTFS(img_moi, log)                     # không override_boot
+    files <- []; _duyet(fs, 5, "", files, {}, 0) # xác minh đọc bình thường
+\end{verbatim}
+
+\subsection{Kết quả log và kiểm chứng}
+
+Kiểm thử tự động qua \texttt{selftest.py} trên \texttt{case1.img} đạt tuyệt đối \textbf{5/5} tập tin đúng nội dung (khớp mã băm SHA-256) và \textbf{5/5} đúng tên/đường dẫn. Ảnh đầu ra sau khi chạy \texttt{--repair} đọc lại thành công 5/5 tập tin bằng lệnh \texttt{--info} chuẩn:
+
+\begin{center}
+\begin{tabular}{|l|c|c|r|}
+\hline
+\textbf{Đường dẫn tập tin} & \textbf{MFT Record} & \textbf{Offset MFT Record} & \textbf{Kích thước (byte)} \\ \hline
+\texttt{DATA/S16.JPG} & 65 & \texttt{0x14400} & 121{,}691 \\ \hline
+\texttt{DATA/M13.PNG} & 66 & \texttt{0x14800} & 244{,}179 \\ \hline
+\texttt{DATA/H59.PDF} & 67 & \texttt{0x14C00} & 307{,}151 \\ \hline
+\texttt{DATA/F11.TXT} & 68 & \texttt{0x15000} & 143 \\ \hline
+\texttt{DATA/M81.JPG} & 69 & \texttt{0x15400} & 412{,}499 \\ \hline
+\end{tabular}
+\end{center}
+
+\begin{center}
+\fbox{\parbox{0.92\textwidth}{\centering Nhật ký thực thi (\texttt{--log}) khi chạy \texttt{--case 1 --repair} trên \texttt{case1.img}:\\[2pt]
+Ghi nhận tham số sai ở Sector 0 \& Backup Boot, quyết định suy luận từ Record 0 (\texttt{0x4000}), trích xuất 5 tập tin và xác minh ảnh sau sửa.}}
+% \includegraphics[width=\textwidth]{chapter/figures/case1-log.png}
+\end{center}
+
+%====================================================================
+\section{Hạn chế}
+%====================================================================
+
+\begin{itemize}
+    \item \textbf{Chưa hỗ trợ \texttt{\$ATTRIBUTE\_LIST} (\texttt{0x20}):} khi một bản ghi MFT phải mở rộng thuộc tính sang bản ghi phụ do phân mảnh lớn hoặc quá nhiều thuộc tính, chương trình phát hiện và ghi cảnh báo qua \texttt{log.canh\_bao} thay vì tiếp tục duyệt bản ghi mở rộng (giới hạn đã biết).
+    \item \textbf{Phụ thuộc hai trường Boot Sector không bị sửa:} việc định vị và tính toán dựa trên giả thiết \texttt{bps} (\texttt{0x0B}) và \texttt{total\_sectors} (\texttt{0x28}) còn nguyên vẹn; nếu \texttt{bps} bất thường, chương trình chỉ fallback về 512 và ghi cảnh báo.
+    \item \textbf{Phụ thuộc tính nguyên vẹn của Record 0:} không thể suy ra \texttt{mft\_lcn} nếu bản ghi 0 của \texttt{\$MFT} bị xóa, hỏng Fixup hoặc hỏng runlist của \texttt{\$DATA}.
+\end{itemize}
