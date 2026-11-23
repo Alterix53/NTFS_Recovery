@@ -14,7 +14,7 @@ Chương trình được xây dựng trên skeleton của giảng viên, hỗ tr
 Midterm/
 ├── Report/                                 # Thư mục Báo cáo & Phân công
 │   ├── Report.pdf                          # Báo cáo kỹ thuật chính (tối đa 20 trang)
-│   └── Work_Assignment.md                  # Bảng phân công công việc 4 thành viên
+│   └── Work_Assignment.txt                 # Bảng phân công công việc 4 thành viên
 │
 ├── src/                                    # Thư mục Source Code
 │   ├── bai_lam.py                          # Class BaiLam: info, case1, case2, case3, case_ext, repair, corrupt
@@ -129,5 +129,5 @@ Trong `src/mo_rong.json`:
 | :--- | :---: | :--- |
 | NGUYỄN ĐẶNG MINH DUY | 23127042 | Case 1 và `repair()` |
 | NGUYỄN ANH KIỆT | 23127005 | `info()` và Case 2 |
-| NGUYỄN LÊ THIÊN LÝ | [MSSV] | Case 3 |
+| NGUYỄN LÊ THIÊN LÝ | 23127223 | Case 3 |
 | NGUYỄN TẤN PHƯỚC | 23127536 | Bonus C: `corrupt()`, `case_ext()` |
